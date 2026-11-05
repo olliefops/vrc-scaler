@@ -1,14 +1,26 @@
 import {Server} from "node-osc";
+import { parseArgs } from "util";
+
+const { values: params } = parseArgs({
+    options: {
+        "osc-server-host": {
+            type: "string",
+            default: "127.0.0.1"
+        },
+        "osc-server-port": {
+            type: "string",
+            default: "9001"
+        },
+    },
+    strict: false, // Prevents errors if other unknown flags are passed
+});
 
 export class OSCController {
     private server: Server | undefined;
 
     constructor() {
-        const serverAddress = process.env.OSC_SERVER_HOST ?? '127.0.0.1';
-        const serverPort = process.env.OSC_SERVER_PORT ?? 9001;
-
-        this.server = new Server(serverPort, serverAddress, () => {
-            console.log(`OSC Server started at ${serverAddress}:${serverPort}`);
+        this.server = new Server(params["osc-server-port"], params["osc-server-host"], () => {
+            console.log(`OSC Server started at ${params["osc-server-host"]}:${params["osc-server-port"]}`);
         })
     }
 

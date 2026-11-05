@@ -1,16 +1,17 @@
 {
   "name": "VRCScaling",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "description": "",
   "main": "dist/index.js",
   "scripts": {
+    "dev": "bun --watch src/index.ts",
     "build": "bun run build:win && bun run build:linux-x64 && bun run build:linux-arm",
     "build:win": "bun build --compile --target=bun-win32-x64 ./src/index.ts --outfile=./build/VRCScaler_Win.exe",
     "build:linux-x64": "bun build --compile --target=bun-linux-x64 ./src/index.ts --outfile=./build/VRCScaler_Linux-x64",
     "build:linux-arm": "bun build --compile --target=bun-linux-arm64 ./src/index.ts --outfile=./build/VRCScaler_Linux-arm64"
   },
   "dependencies": {
-    "node-osc": "^11.7.1",
+    "node-osc": "^11.7.1"
   },
   "devDependencies": {
     "@types/bun": "^1.4.4",

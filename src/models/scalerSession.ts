@@ -1,7 +1,21 @@
 import {Client} from "node-osc";
+import {parseArgs} from "util";
 
+const { values: params } = parseArgs({
+    options: {
+        "osc-vrc-host": {
+            type: "string",
+            default: "127.0.0.1"
+        },
+        "osc-vrc-port": {
+            type: "string",
+            default: "9000"
+        },
+    },
+    strict: false, // Prevents errors if other unknown flags are passed
+});
 const filePath = 'VRCSCaler-Sessions-Data.json';
-let oscVRC = new Client(process.env.OSC_SERVER_HOST ?? '127.0.0.1', process.env.OSC_SERVER_PORT ?? 9000);
+const oscVRC = new Client(params["osc-vrc-host"], params["osc-vrc-port"]);
 
 export class ScalerSession {
     // Avatar Data
@@ -11,7 +25,7 @@ export class ScalerSession {
     // Scaling Data
     state: number = 0;
     scaleRate: number = 0.25;
-    scaleRateUnit: 0|1 = 0; // 0: meters, 1: centimeters
+    scaleRateUnit: number = 0; // 0: meters, 1: centimeters
 
     // Session Settings
     autoRestoreData?: boolean;
@@ -40,14 +54,13 @@ export class ScalerSession {
     }
 
     startScale() {
-        if (!this) return;
-        stopScale();
-
+        this.stopScale();
         if (this.state === 0) return;
+
         this.scalerTimer = setInterval(() => {
             if (!this.currentEyeHeight || !this.scaleRate) return;
             if (this.currentEyeHeight >= 10 || this.currentEyeHeight <= 0.5) {
-                stopScale();
+                this.stopScale();
                 return;
             }
 
@@ -58,6 +71,32 @@ export class ScalerSession {
 
     stopScale() {
         clearInterval(this.scalerTimer);
+    }
+
+    applyParameters() {
+        const meterScale = this.scaleRateUnit == 0 ? this.scaleRate : this.scaleRate / 100;
+        const centimeterScale = this.scaleRateUnit == 0 ? this.scaleRate * 100 : this.scaleRate;
+
+        oscVRC.send('/avatar/parameters/Scaler/State', {
+            type: 'int',
+            value: this.state
+        });
+        oscVRC.send('/avatar/parameters/Scaler/Rate', {
+            type: 'float',
+            value: this.scaleRate
+        });
+        oscVRC.send('/avatar/parameters/Scaler/Rate/Unit', {
+            type: 'float',
+            value: this.scaleRateUnit
+        });
+        oscVRC.send('/avatar/parameters/Scaler/Rate/Meters', {
+            type: 'float',
+            value: meterScale
+        });
+        oscVRC.send('/avatar/parameters/Scaler/Rate/Centimeters', {
+            type: 'float',
+            value: centimeterScale
+        });
     }
 
     async save() {

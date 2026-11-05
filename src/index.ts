@@ -1,5 +1,19 @@
 import {OSCController} from "models/oscController";
 import {ScalerSession} from "models/scalerSession";
+import { parseArgs } from "util";
+
+const { values } = parseArgs({
+    args: Bun.argv,
+    options: {
+        // Define your argument here (camelCase is recommended for JS object keys)
+        "osc-server-port": {
+            type: "string",
+            default: "9000" // Optional fallback default
+        },
+    },
+    strict: false, // Prevents errors if other unknown flags are passed
+});
+
 
 let currentSession: ScalerSession;
 let initialEyeHeight: number = -1;
@@ -28,7 +42,7 @@ function restoreSession() {
     }
 }
 
-// Avatar Change Handlers
+// Avatar Change Listener
 oscController.addEventListener('/avatar/change', (avatarId) => {
     if (typeof avatarId !== "string") return;
     initialEyeHeight = -1;
@@ -43,7 +57,7 @@ oscController.addEventListener('/avatar/change', (avatarId) => {
     loadSession(avatarId);
 })
 
-// Eye Height Handlers
+// Eye Height Listener
 oscController.addEventListener('/avatar/eyeheight', (value) => {
     if (!currentSession || typeof value !== "number") return;
     if (!initialEyeHeight) {
@@ -53,14 +67,28 @@ oscController.addEventListener('/avatar/eyeheight', (value) => {
     currentSession.currentEyeHeight = value;
 })
 
-// State Handlers
+// State Listener
 oscController.addEventListener('/avatar/parameters/VRScaler/State', (value) => {
     if (!currentSession || !currentSession.currentEyeHeight || typeof value !== "number") return;
     currentSession.state = value;
     currentSession.startScale();
 })
 
-// Meters Rate Handlers
+// Rate Listener
+oscController.addEventListener('/avatar/parameters/VRScaler/Rate', (value) => {
+    if (!currentSession || typeof value !== "number") return;
+    currentSession.scaleRate = value * 100;
+    currentSession.save();
+})
+
+// Rate Unit Listener
+oscController.addEventListener('/avatar/parameters/VRScaler/Rate/Unit', (value) => {
+    if (!currentSession || typeof value !== "number") return;
+    currentSession.scaleRateUnit = value * 100;
+    currentSession.save();
+})
+
+// Meters Rate Listener
 oscController.addEventListener('/avatar/parameters/VRScaler/Rate/Meters', (value) => {
     if (!currentSession || typeof value !== "number") return;
     currentSession.scaleRate = value * 100;
@@ -68,7 +96,7 @@ oscController.addEventListener('/avatar/parameters/VRScaler/Rate/Meters', (value
     currentSession.save();
 })
 
-// Centimeters Rate Handlers
+// Centimeters Rate Listener
 oscController.addEventListener('/avatar/parameters/VRScaler/Rate/Centimeters', (value) => {
     if (!currentSession || typeof value !== "number") return;
     currentSession.scaleRate = value;
@@ -76,7 +104,7 @@ oscController.addEventListener('/avatar/parameters/VRScaler/Rate/Centimeters', (
     currentSession.save();
 })
 
-// Auto Restore Handler
+// Auto Restore Listener
 oscController.addEventListener('/avatar/parameters/VRScaler/Settings/AutoRestore', (value) => {
     if (!currentSession || typeof value !== "boolean") return;
     currentSession.autoRestoreData = value;
