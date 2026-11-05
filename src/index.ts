@@ -43,13 +43,6 @@ oscController.addEventListener('/avatar/change', (avatarId) => {
     loadSession(avatarId);
 })
 
-// State Handlers
-oscController.addEventListener('/avatar/parameters/VRScaler/State', (value) => {
-    if (!currentSession || !currentSession.currentEyeHeight || typeof value !== "number") return;
-    currentSession.state = value;
-    currentSession.startScale();
-})
-
 // Eye Height Handlers
 oscController.addEventListener('/avatar/eyeheight', (value) => {
     if (!currentSession || typeof value !== "number") return;
@@ -60,16 +53,17 @@ oscController.addEventListener('/avatar/eyeheight', (value) => {
     currentSession.currentEyeHeight = value;
 })
 
+// State Handlers
+oscController.addEventListener('/avatar/parameters/VRScaler/State', (value) => {
+    if (!currentSession || !currentSession.currentEyeHeight || typeof value !== "number") return;
+    currentSession.state = value;
+    currentSession.startScale();
+})
+
 // Meters Rate Handlers
 oscController.addEventListener('/avatar/parameters/VRScaler/Rate/Meters', (value) => {
     if (!currentSession || typeof value !== "number") return;
     currentSession.scaleRate = value * 100;
-    currentSession.scaleRateUnit = ScalerSession.metersUnit;
-    currentSession.save();
-})
-oscController.addEventListener('/avatar/parameters/VRScaler/Rate/MetersPreset', (value) => {
-    if (!currentSession || typeof value !== "number") return;
-    currentSession.scaleRate = value;
     currentSession.scaleRateUnit = ScalerSession.metersUnit;
     currentSession.save();
 })
@@ -78,12 +72,6 @@ oscController.addEventListener('/avatar/parameters/VRScaler/Rate/MetersPreset', 
 oscController.addEventListener('/avatar/parameters/VRScaler/Rate/Centimeters', (value) => {
     if (!currentSession || typeof value !== "number") return;
     currentSession.scaleRate = value;
-    currentSession.scaleRateUnit = ScalerSession.centimetersUnit;
-    currentSession.save();
-})
-oscController.addEventListener('/avatar/parameters/VRScaler/Rate/CentimetersPreset', (value) => {
-    if (!currentSession || typeof value !== "number") return;
-    currentSession.scaleRate = value / 100;
     currentSession.scaleRateUnit = ScalerSession.centimetersUnit;
     currentSession.save();
 })
