@@ -20,82 +20,58 @@ const { values: params } = parseArgs({
 export let oscServerState: boolean = false
 let oscController: OSCController;
 let currentSession: ScalerSession;
-let initialEyeHeight: number = -1;
+let defaultEyeHeight: number = -1;
 let heartbeatTimeout: NodeJS.Timer;
 let isOSCConnected: boolean = false;
 
 export const oscVRC = new Client(params["osc-vrc-host"], params["osc-vrc-port"]);
 
-function loadSession(avatarId: string) {
-    ScalerSession.fetchSession(avatarId).then((session) => {
-        currentSession = session;
-
-        if (!currentSession.currentEyeHeight || currentSession.currentEyeHeight < 0) {
-            const waitForLoad = setInterval(() => {
-                if (initialEyeHeight < 0) return;
-                currentSession.setEyeHeight(initialEyeHeight);
-                currentSession.save();
-                clearInterval(waitForLoad);
-                restoreSession();
-            }, 100)
-        } else if (currentSession.currentEyeHeight && currentSession.currentEyeHeight > 0) {
-            restoreSession();
-        }
-    })
-}
-function restoreSession() {
-    if (!currentSession.currentEyeHeight) return;
-    currentSession.setEyeHeight(currentSession.currentEyeHeight);
-    currentSession.setScaleRateUnit(currentSession.scaleRateUnit)
-    currentSession.setScaleRate(currentSession.scaleRate)
-    currentSession.setScaleState(currentSession.state)
-    if (currentSession.state === 0) return;
-    currentSession.startScale();
-}
 function avatarDataHandlersInit(loadingSpinner: SpinnerResult) {
-    oscController.addEventListener('/avatar/change', (avatarId) => {
-        if (typeof avatarId !== "string") return;
-        initialEyeHeight = -1;
+    oscController.addEventListener('/avatar/change', async (avatarId) => {
+        if (typeof avatarId !== "string" || !avatarId) return;
+        defaultEyeHeight = -1;
 
         if (currentSession) {
-            isOSCConnected = true;
             currentSession.stopScale();
-            currentSession.save().then(() => {
-                loadSession(avatarId);
-                isOSCConnected = true;
-                loadingSpinner.stop('Avatar initialization completed.');
-                startShell(loadingSpinner);
-            });
-            return;
+            await currentSession.save();
+        }
+        currentSession = await ScalerSession.fetchSession(avatarId);
+
+        if (!currentSession.currentEyeHeight || currentSession.currentEyeHeight < 0) {
+            currentSession.currentEyeHeight = defaultEyeHeight;
+            await currentSession.save();
+        } else if (!currentSession.autoRestoreData) {
+            currentSession.setEyeHeight(currentSession.currentEyeHeight);
+            currentSession.setScaleRateUnit(currentSession.scaleRateUnit)
+            currentSession.setScaleRate(currentSession.scaleRate)
+            currentSession.setScaleState(currentSession.state)
+
+            if (currentSession.state === 0) return;
+            currentSession.startScale();
         }
 
-        loadSession(avatarId);
-        isOSCConnected = true;
-        loadingSpinner.stop('Avatar initialization completed.');
-        startShell(loadingSpinner);
+        if (!isOSCConnected) {
+            isOSCConnected = true;
+            loadingSpinner.stop('Avatar initialization completed.');
+            startPrompt(loadingSpinner);
+        }
     })
     oscController.addEventListener('/avatar/eyeheight', (value) => {
         if (!currentSession || typeof value !== "number") return;
-        if (initialEyeHeight == -1) {
-            initialEyeHeight = value;
+        if (currentSession.state !== 0) return;
+
+        if (defaultEyeHeight < 0) {
+            defaultEyeHeight = value;
             return;
         }
         currentSession.currentEyeHeight = value;
-    })
-    oscController.addEventListener('/avatar/parameters/ScaleFactor', (value) => {
-        if (!currentSession || typeof value !== "number" || currentSession.defaultEyeHeight) return;
-        const waitForLoad = setInterval(() => {
-            if (!currentSession.currentEyeHeight) return;
-            currentSession.defaultEyeHeight = currentSession.currentEyeHeight / value;
-            currentSession.save();
-            clearInterval(waitForLoad);
-        }, 100)
     })
 }
 function vrcscalerHandlersInit() {
     oscController.addEventListener('/avatar/parameters/VRCScaler/State', (value) => {
         if (!currentSession || typeof value !== "number") return;
         if (currentSession.state === value) return;
+
         currentSession.state = value;
         currentSession.save();
 
@@ -148,7 +124,12 @@ function vrcscalerHandlersInit() {
         currentSession.resetSettings();
         currentSession.save();
     })
-
+    oscController.addEventListener('/avatar/parameters/VRCScaler/Settings/DefaultHeight', (value) => {
+        if (!currentSession || typeof value !== "boolean") return;
+        if (!value) return;
+        currentSession.defaultEyeHeight = currentSession.currentEyeHeight;
+        currentSession.save();
+    })
 }
 function heartbeatHandlersInit() {
     setInterval(() => {
@@ -165,7 +146,7 @@ function heartbeatHandlersInit() {
         }, 1000);
     })
 }
-async function startShell(loadingSpinner: SpinnerResult) {
+async function startPrompt(loadingSpinner: SpinnerResult) {
     const action = await autocomplete({
         message: 'Select an action:',
         placeholder: 'Type to search...',
@@ -175,10 +156,11 @@ async function startShell(loadingSpinner: SpinnerResult) {
             { value: 'stop', label: 'Stop' },
             { value: 'shrink', label: 'Shrink' },
             { value: 'divider', label: '── Speed ──' },
-            { value: 'scaling-rate', label: 'Speed', hint: 'Set the scaling speed' },
-            { value: 'scaling-unit-meters', label: 'Unit: m/s', hint: 'Set the scaling unit to m/s' },
-            { value: 'scaling-unit-centimeters', label: 'Unit: cm/s', hint: 'Set the scaling unit to cm/s' },
+            { value: 'scaling-rate', label: 'Set Speed', hint: 'Set the scaling speed' },
+            { value: 'scaling-unit-meters', label: 'Set Unit: m/s', hint: 'Set the scaling unit to m/s' },
+            { value: 'scaling-unit-centimeters', label: 'Set Unit: cm/s', hint: 'Set the scaling unit to cm/s' },
             { value: 'divider', label: '── Settings ──' },
+            { value: 'set-default-height', label: 'Set Default Height', hint: `Set the default height to the current height` },
             { value: 'reset-height', label: 'Reset Height' },
             { value: 'reset-settings', label: 'Reset Settings' },
             { value: 'divider', label: '──' },
@@ -199,14 +181,17 @@ async function startShell(loadingSpinner: SpinnerResult) {
             case 'grow':
                 currentSession.setScaleState(1);
                 currentSession.startScale();
+                await currentSession.save();
                 break;
             case 'shrink':
                 currentSession.setScaleState(-1);
                 currentSession.startScale();
+                await currentSession.save();
                 break;
             case 'stop':
                 currentSession.setScaleState(0);
                 currentSession.stopScale();
+                await currentSession.save();
                 break;
             case 'scaling-rate':
                 const rate = await text({
@@ -214,20 +199,29 @@ async function startShell(loadingSpinner: SpinnerResult) {
                 })
                 if (typeof rate !== 'string') break;
                 currentSession.setScaleRate(parseFloat(rate));
+                await currentSession.save();
                 break;
             case 'scaling-unit-meters':
                 currentSession.setScaleRateUnit(ScalerSession.metersUnit);
                 currentSession.updateScaleRate();
+                await currentSession.save();
                 break;
             case 'scaling-unit-centimeters':
                 currentSession.setScaleRateUnit(ScalerSession.centimetersUnit);
                 currentSession.updateScaleRate();
+                await currentSession.save();
+                break;
+            case 'set-default-height':
+                currentSession.defaultEyeHeight = currentSession.currentEyeHeight;
+                await currentSession.save();
                 break;
             case 'reset-height':
                 currentSession.resetHeight();
+                await currentSession.save();
                 break;
             case 'reset-settings':
                 currentSession.resetSettings();
+                await currentSession.save();
                 break;
         }
     }
@@ -236,19 +230,16 @@ async function startShell(loadingSpinner: SpinnerResult) {
         log.error('Failed to connect to avatar.');
         loadingSpinner.start('Waiting for avatar initialization');
     } else {
-        startShell(loadingSpinner);
+        await startPrompt(loadingSpinner);
     }
 }
 
-function init() {
-    intro('VRCScaler')
-    oscController = new OSCController(() => {
-        const loadingSpinner = spinner()
-        loadingSpinner.start('Waiting for avatar initialization.');
-        avatarDataHandlersInit(loadingSpinner);
-        vrcscalerHandlersInit();
-        heartbeatHandlersInit();
-    })
-}
+intro('VRCScaler')
+oscController = new OSCController(() => {
+    const loadingSpinner = spinner()
+    loadingSpinner.start('Waiting for avatar initialization.');
 
-init();
+    avatarDataHandlersInit(loadingSpinner);
+    vrcscalerHandlersInit();
+    heartbeatHandlersInit();
+})

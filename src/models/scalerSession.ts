@@ -4,6 +4,7 @@ import {log} from "@clack/prompts";
 const filePath = 'VRCScaler_Sessions.json';
 const minEyeHeight = 0.5;
 const maxEyeHeight = 100;
+let currentIteration: number = 0;
 let currentData: ScalerSession[];
 let scalerTimer: NodeJS.Timer | null = null;
 
@@ -107,6 +108,7 @@ export class ScalerSession {
                 return;
             }
 
+            currentIteration++;
             let nextEyeHeight = this.currentEyeHeight + this.state * ( ( this.scaleRateUnit == 0 ? this.scaleRate : this.scaleRate / 100 ) / 50 );
             nextEyeHeight = Math.min(Math.max(nextEyeHeight, minEyeHeight), maxEyeHeight)
 
@@ -117,7 +119,6 @@ export class ScalerSession {
     stopScale() {
         clearInterval(scalerTimer);
     }
-
     async save() {
         const sessions = currentData.filter((item: ScalerSession) => item.avatarId !== this.avatarId) ?? [];
         const newData = [...sessions, this];
@@ -130,6 +131,7 @@ export class ScalerSession {
 
         return;
     }
+
     static async fetchSession(avatarId: string): Promise<ScalerSession> {
         if (!currentData) {
             const file = await Bun.file(filePath, { type: "application/json" });
