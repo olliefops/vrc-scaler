@@ -1,6 +1,5 @@
-/tmp
-/out-tsc
-/build
+/.bun-cache
+/dist
 
 /node_modules
 npm-debug.log*
@@ -12,4 +11,4 @@ yarn-error.log*
 .idea
 .vscode
 
-VRCSCaler-Sessions-Data.json
+VRCScaler_Sessions.json

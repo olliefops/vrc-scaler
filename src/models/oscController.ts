@@ -1,5 +1,6 @@
 import {Server} from "node-osc";
 import { parseArgs } from "util";
+import {log, stream} from "@clack/prompts";
 
 const { values: params } = parseArgs({
     options: {
@@ -12,27 +13,34 @@ const { values: params } = parseArgs({
             default: "9001"
         },
     },
-    strict: false, // Prevents errors if other unknown flags are passed
+    strict: false,
 });
 
 export class OSCController {
     private server: Server | undefined;
 
-    constructor() {
-        this.server = new Server(params["osc-server-port"], params["osc-server-host"], () => {
-            console.log(`OSC Server started at ${params["osc-server-host"]}:${params["osc-server-port"]}`);
-        })
+    constructor(onReady: Function) {
+        this.server = new Server(params["osc-server-port"], params["osc-server-host"])
+
+        this.server.on('listening', () => {
+            log.success(`OSC Server: Listening on ${params["osc-server-host"]}:${params["osc-server-port"]}`);
+            onReady();
+        });
+        this.server.on('error', (err) => {
+            log.error('OSC Server: ', err);
+            this.server.close();
+        });
+
+        this.server.setMaxListeners(20);
     }
 
     addEventListener(address: string, eventHandler: (data: string|number|boolean) => void) {
         if (!this.server) return;
 
-        console.debug(`Added event listener at address "${address}"`);
         this.server.on('message', (msg: [string, string|number|boolean]) => {
             const [msgAddress, msgValue] = msg;
 
             if (msgAddress == address) {
-                console.debug(`Event triggered at address "${address}": ${msgValue}`);
                 eventHandler(msgValue);
             }
         })
