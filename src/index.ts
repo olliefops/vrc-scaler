@@ -20,7 +20,7 @@ const { values: params } = parseArgs({
 export let oscServerState: boolean = false
 let oscController: OSCController;
 let currentSession: ScalerSession;
-let defaultEyeHeight: number = -1;
+let firstEyeHeight: number = -1;
 let heartbeatTimeout: NodeJS.Timer;
 let isOSCConnected: boolean = false;
 
@@ -29,7 +29,7 @@ export const oscVRC = new Client(params["osc-vrc-host"], params["osc-vrc-port"])
 function avatarDataHandlersInit(loadingSpinner: SpinnerResult) {
     oscController.addEventListener('/avatar/change', async (avatarId) => {
         if (typeof avatarId !== "string" || !avatarId) return;
-        defaultEyeHeight = -1;
+        firstEyeHeight = -1;
 
         if (currentSession) {
             currentSession.stopScale();
@@ -38,30 +38,39 @@ function avatarDataHandlersInit(loadingSpinner: SpinnerResult) {
         currentSession = await ScalerSession.fetchSession(avatarId);
 
         if (!currentSession.currentEyeHeight || currentSession.currentEyeHeight < 0) {
-            currentSession.currentEyeHeight = defaultEyeHeight;
-            await currentSession.save();
-        } else if (!currentSession.autoRestoreData) {
+            const initializationWait = setInterval(async () => {
+                if (firstEyeHeight < 0) return
+                currentSession.currentEyeHeight = firstEyeHeight;
+                currentSession.defaultEyeHeight = firstEyeHeight;
+
+                clearInterval(initializationWait);
+                await currentSession.save();
+            }, 100);
+        } else if (currentSession.autoRestoreData) {
             currentSession.setEyeHeight(currentSession.currentEyeHeight);
             currentSession.setScaleRateUnit(currentSession.scaleRateUnit)
             currentSession.setScaleRate(currentSession.scaleRate)
             currentSession.setScaleState(currentSession.state)
 
-            if (currentSession.state === 0) return;
-            currentSession.startScale();
+            if (currentSession.state !== 0) {
+                currentSession.startScale();
+            }
         }
+        currentSession.setAutoRestoreData(currentSession.autoRestoreData)
+
 
         if (!isOSCConnected) {
             isOSCConnected = true;
             loadingSpinner.stop('Avatar initialization completed.');
-            startPrompt(loadingSpinner);
+            await startPrompt(loadingSpinner);
         }
     })
     oscController.addEventListener('/avatar/eyeheight', (value) => {
         if (!currentSession || typeof value !== "number") return;
         if (currentSession.state !== 0) return;
 
-        if (defaultEyeHeight < 0) {
-            defaultEyeHeight = value;
+        if (firstEyeHeight < 0) {
+            firstEyeHeight = value;
             return;
         }
         currentSession.currentEyeHeight = value;
@@ -238,7 +247,6 @@ intro('VRCScaler')
 oscController = new OSCController(() => {
     const loadingSpinner = spinner()
     loadingSpinner.start('Waiting for avatar initialization.');
-
     avatarDataHandlersInit(loadingSpinner);
     vrcscalerHandlersInit();
     heartbeatHandlersInit();

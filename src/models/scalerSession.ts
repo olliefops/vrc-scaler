@@ -20,7 +20,7 @@ export class ScalerSession {
     scaleRateUnit: number = 0; // 0: meters, 1: centimeters
 
     // Session Settings
-    autoRestoreData?: boolean;
+    autoRestoreData: boolean = false;
 
     static metersUnit = 0;
     static centimetersUnit = 1;
@@ -47,6 +47,13 @@ export class ScalerSession {
         this.scaleRateUnit = value;
         oscVRC.send('/avatar/parameters/VRCScaler/Rate/Unit', {
             type: 'float',
+            value: value
+        });
+    }
+    setAutoRestoreData(value: boolean) {
+        this.autoRestoreData = value;
+        oscVRC.send('/avatar/parameters/VRCScaler/Settings/AutoRestore', {
+            type: 'boolean',
             value: value
         });
     }
