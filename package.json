@@ -12,7 +12,6 @@
   },
   "dependencies": {
     "@clack/prompts": "^1.8.1",
-    "@semos-labs/glyph": "^0.2.10",
     "node-osc": "^11.7.1"
   },
   "devDependencies": {
