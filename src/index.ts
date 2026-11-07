@@ -308,12 +308,12 @@ const startShell = async (loadingSpinner: SpinnerResult)=> {
     }
 }
 
-if (typeof params["osc-vrc-host"] !== 'string' || typeof params["osc-vrc-port"] !== 'string') process.exit(1);
+if (typeof params["osc-client-host"] !== 'string' || typeof params["osc-client-port"] !== 'string') process.exit(1);
 if (typeof params["osc-server-port"] !== "string" || typeof params["osc-server-host"] !== "string") process.exit(1);
 
 intro(`VRCScaler`)
 
-oscClient = new Client(params["osc-vrc-host"], parseInt(params["osc-vrc-port"]));
+oscClient = new Client(params["osc-client-host"], parseInt(params["osc-client-port"]));
 oscServer = new OscServer(params["osc-server-host"], parseInt(params["osc-server-port"]), async () => {
     log.success(
         `OSC: Server started on ${params["osc-server-host"]}:${params["osc-server-port"]}\n`+
