@@ -11,5 +11,5 @@ yarn-error.log*
 .idea
 .vscode
 
-vrc-scaler-sessions.json
-vrc-scaler-settings.json
+vrc-scaler_sessions.json
+vrc-scaler_settings.json

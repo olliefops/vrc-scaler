@@ -8,11 +8,11 @@ import {Settings} from "models/settings";
 // Launch Args
 const { values: params } = parseArgs({
     options: {
-        "osc-vrc-host": {
+        "osc-client-host": {
             type: "string",
             default: "127.0.0.1"
         },
-        "osc-vrc-port": {
+        "osc-client-port": {
             type: "string",
             default: "9000"
         },
@@ -176,7 +176,7 @@ const startVRCHandlers = (loadingSpinner: SpinnerResult)=> {
 
         if (!isOSCConnected && currentSession) {
             isOSCConnected = true;
-            loadingSpinner.stop('OSC: Connected');
+            loadingSpinner.stop('Connected');
             await startShell(loadingSpinner);
         }
 
@@ -189,8 +189,8 @@ const startVRCHandlers = (loadingSpinner: SpinnerResult)=> {
             currentSession.stopScale();
 
             currentSession.save().then(() => {
-                log.warn('OSC: Connection lost');
-                loadingSpinner.start('OSC: Waiting for connection');
+                log.warn('Connection lost');
+                loadingSpinner.start('Waiting for connection');
             });
         }, 1000);
     })
@@ -283,13 +283,13 @@ const startShell = async (loadingSpinner: SpinnerResult)=> {
                 await currentSession.save();
                 break;
             case 'min-height':
-                value = await text({ message: "Enter minimum height (in meters):" })
+                value = await text({ message: "Enter minimum height (m):" })
                 if (typeof value !== 'string') break;
                 settings.minEyeHeight = parseFloat(value);
                 await settings.save();
                 break;
             case 'max-height':
-                value = await text({ message: "Enter maximum height (in meters):" })
+                value = await text({ message: "Enter maximum height (m):" })
                 if (typeof value !== 'string') break;
                 settings.maxEyeHeight = parseFloat(value);
                 await settings.save();
@@ -311,12 +311,17 @@ const startShell = async (loadingSpinner: SpinnerResult)=> {
 if (typeof params["osc-vrc-host"] !== 'string' || typeof params["osc-vrc-port"] !== 'string') process.exit(1);
 if (typeof params["osc-server-port"] !== "string" || typeof params["osc-server-host"] !== "string") process.exit(1);
 
-intro(`VRCScaler v${process.env.npm_package_version}`)
+intro(`VRCScaler`)
 
 oscClient = new Client(params["osc-vrc-host"], parseInt(params["osc-vrc-port"]));
 oscServer = new OscServer(params["osc-server-host"], parseInt(params["osc-server-port"]), async () => {
+    log.success(
+        `OSC: Server started on ${params["osc-server-host"]}:${params["osc-server-port"]}\n`+
+        `OSC: Sending messages to VRC on ${params["osc-vrc-host"]}:${params["osc-vrc-port"]}`
+    )
+
     const loadingSpinner = spinner()
-    loadingSpinner.start('OSC: Waiting for connection');
+    loadingSpinner.start('Waiting for connection');
     startAvatarHandlers();
     startVRCHandlers(loadingSpinner);
 })
