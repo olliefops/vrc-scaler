@@ -1,12 +1,11 @@
-import {oscVRChat} from "@/index";
+import {oscClient} from "@/index";
 import {fetchFile, saveFile} from "utils/filesystem";
-import {ScalerSettings} from "models/scalerSettings";
+import {Settings} from "models/settings";
 
-const filePath = 'VRCScaler_Sessions.json';
+const filePath = 'vrc-scaler_sessions.json';
+let scalerTimer: NodeJS.Timeout | undefined;
 
-let scalerTimer: NodeJS.Timer | undefined;
-
-export class ScalerSession {
+export class Session {
     // Avatar Data
     avatarId: string;
     currentEyeHeight?: number;
@@ -36,45 +35,45 @@ export class ScalerSession {
     // Setter Functions
     setEyeHeight(value: number) {
         this.currentEyeHeight = value;
-        oscVRChat.send('/avatar/eyeheight', {
+        oscClient.send('/avatar/eyeheight', {
             type: 'float',
             value: value
         })
     }
     setScaleState(value: number) {
         this.state = value;
-        oscVRChat.send('/avatar/parameters/VRCScaler/State', {
+        oscClient.send('/avatar/parameters/VRCScaler/State', {
             type: 'float',
             value: value
         });
     }
     setScaleRate(value: number) {
         this.scaleRate = value;
-        oscVRChat.send('/avatar/parameters/VRCScaler/Rate', {
+        oscClient.send('/avatar/parameters/VRCScaler/Rate', {
             type: 'float',
             value: value / 100
         });
     }
     setScaleRateUnit(value: number) {
         this.scaleRateUnit = value;
-        oscVRChat.send('/avatar/parameters/VRCScaler/Rate/Unit', {
+        oscClient.send('/avatar/parameters/VRCScaler/Rate/Unit', {
             type: 'float',
             value: value
         });
     }
     setAutoRestore(value: boolean) {
         this.autoRestore = value;
-        oscVRChat.send('/avatar/parameters/VRCScaler/Settings/AutoRestore', {
+        oscClient.send('/avatar/parameters/VRCScaler/Settings/AutoRestore', {
             type: 'boolean',
             value: value
         });
     }
     updateScaleRate() {
-        if (this.scaleRateUnit === ScalerSession.metersUnit) {
+        if (this.scaleRateUnit === Session.metersUnit) {
             this.setScaleRate(this.scaleRate / 100);
             return;
         }
-        if (this.scaleRateUnit === ScalerSession.centimetersUnit) {
+        if (this.scaleRateUnit === Session.centimetersUnit) {
             this.setScaleRate(this.scaleRate * 100);
             return;
         }
@@ -85,14 +84,14 @@ export class ScalerSession {
         if (!this.defaultEyeHeight) return;
         this.stopScale();
         this.setEyeHeight(this.defaultEyeHeight);
-        this.setScaleRateUnit(ScalerSession.metersUnit)
-        this.setScaleState(ScalerSession.stopState);
+        this.setScaleRateUnit(Session.metersUnit)
+        this.setScaleState(Session.stopState);
         this.setScaleRate(1);
     }
     resetHeight() {
         if (!this.defaultEyeHeight) return;
         this.stopScale();
-        this.setScaleState(ScalerSession.stopState);
+        this.setScaleState(Session.stopState);
         this.setEyeHeight(this.defaultEyeHeight);
     }
 
@@ -101,27 +100,27 @@ export class ScalerSession {
         if (this.state === 0 || !this.currentEyeHeight || !this.scaleRate) return;
         if (scalerTimer) clearInterval(scalerTimer);
 
-        ScalerSettings.fetch().then(settings => {
+        Settings.fetch().then(settings => {
             scalerTimer = setInterval(() => {
                 if (!this.currentEyeHeight || !this.scaleRate) return;
 
                 if (this.state === 0) {
                     if (scalerTimer) clearInterval(scalerTimer);
-                    this.setScaleState(ScalerSession.stopState);
+                    this.setScaleState(Session.stopState);
                     return;
                 }
 
                 if (this.state === -1 && this.currentEyeHeight <= settings.minEyeHeight) {
                     if (scalerTimer) clearInterval(scalerTimer);
                     this.setEyeHeight(settings.minEyeHeight);
-                    this.setScaleState(ScalerSession.stopState);
+                    this.setScaleState(Session.stopState);
                     return;
                 }
 
                 if (this.state === 1 && this.currentEyeHeight >= settings.maxEyeHeight) {
                     if (scalerTimer) clearInterval(scalerTimer);
                     this.setEyeHeight(settings.maxEyeHeight);
-                    this.setScaleState(ScalerSession.stopState);
+                    this.setScaleState(Session.stopState);
                     return;
                 }
 
@@ -138,14 +137,14 @@ export class ScalerSession {
     // Data Functions
     async save() {
         const currentData = (await fetchFile(filePath)) ?? [];
-        const sessions = currentData.filter((item: ScalerSession) => item.avatarId !== this.avatarId) ?? [];
+        const sessions = currentData.filter((item: Session) => item.avatarId !== this.avatarId) ?? [];
         await saveFile(filePath, [...sessions, this]);
     }
-    static async fetch(avatarId: string): Promise<ScalerSession> {
-        const session = new ScalerSession(avatarId);
+    static async fetch(avatarId: string): Promise<Session> {
+        const session = new Session(avatarId);
         const currentData = (await fetchFile(filePath)) ?? [];
 
-        const sessionData = currentData.find((item: ScalerSession) => item.avatarId === avatarId);
+        const sessionData = currentData.find((item: Session) => item.avatarId === avatarId);
         if (sessionData) {
             session.currentEyeHeight = sessionData.currentEyeHeight;
             session.defaultEyeHeight = sessionData.defaultEyeHeight;

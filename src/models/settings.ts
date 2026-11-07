@@ -1,8 +1,8 @@
 import {fetchFile, saveFile} from "utils/filesystem";
 
-const filePath = 'VRCScaler_Settings.json';
+const filePath = 'vrc-scaler_settings.json';
 
-export class ScalerSettings {
+export class Settings {
     minEyeHeight: number = 0.5;
     maxEyeHeight: number = 100;
 
@@ -14,9 +14,9 @@ export class ScalerSettings {
 
     // Data Functions
     save = async () => saveFile(filePath, this)
-    static fetch = async (): Promise<ScalerSettings> => {
+    static fetch = async (): Promise<Settings> => {
         const currentData = await fetchFile(filePath);
-        const settings = new ScalerSettings();
+        const settings = new Settings();
 
         if (currentData) {
             settings.minEyeHeight = currentData.minEyeHeight;
