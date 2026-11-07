@@ -3,6 +3,7 @@ import {parseArgs} from "util";
 import {OSCController} from "models/oscController";
 import {ScalerSession} from "models/scalerSession";
 import {autocomplete, intro, log, spinner, SpinnerResult, text, isCancel} from '@clack/prompts';
+import {ScalerSettings} from "models/scalerSettings";
 
 const { values: params } = parseArgs({
     options: {
@@ -17,16 +18,17 @@ const { values: params } = parseArgs({
     },
     strict: false,
 });
-export let oscServerState: boolean = false
+
+let oscVRChat: Client;
+let promptController: AbortController;
 let oscController: OSCController;
 let currentSession: ScalerSession;
 let firstEyeHeight: number = -1;
 let heartbeatTimeout: NodeJS.Timer;
 let isOSCConnected: boolean = false;
+let shellCurrentValue: string = '';
 
-export const oscVRC = new Client(params["osc-vrc-host"], params["osc-vrc-port"]);
-
-function avatarDataHandlersInit(loadingSpinner: SpinnerResult) {
+const startAvatarHandlers = () => {
     oscController.addEventListener('/avatar/change', async (avatarId) => {
         if (typeof avatarId !== "string" || !avatarId) return;
         firstEyeHeight = -1;
@@ -35,39 +37,40 @@ function avatarDataHandlersInit(loadingSpinner: SpinnerResult) {
             currentSession.stopScale();
             await currentSession.save();
         }
-        currentSession = await ScalerSession.fetchSession(avatarId);
+        currentSession = await ScalerSession.fetch(avatarId);
 
-        if (!currentSession.currentEyeHeight || currentSession.currentEyeHeight < 0) {
+        if (!currentSession.currentEyeHeight || currentSession.currentEyeHeight < 0 || !currentSession.autoRestore) {
             const initializationWait = setInterval(async () => {
                 if (firstEyeHeight < 0) return
                 currentSession.currentEyeHeight = firstEyeHeight;
-                currentSession.defaultEyeHeight = firstEyeHeight;
+
+                if (!currentSession.defaultEyeHeight) {
+                    currentSession.defaultEyeHeight = firstEyeHeight;
+                }
 
                 clearInterval(initializationWait);
                 await currentSession.save();
             }, 100);
-        } else if (currentSession.autoRestoreData) {
-            currentSession.setEyeHeight(currentSession.currentEyeHeight);
+        }
+
+        if (currentSession.autoRestore) {
             currentSession.setScaleRateUnit(currentSession.scaleRateUnit)
             currentSession.setScaleRate(currentSession.scaleRate)
-            currentSession.setScaleState(currentSession.state)
 
-            if (currentSession.state !== 0) {
+            if (currentSession.currentEyeHeight) {
+                currentSession.setEyeHeight(currentSession.currentEyeHeight);
+            }
+
+            currentSession.setScaleState(currentSession.state)
+            if (currentSession.state !== ScalerSession.stopState) {
                 currentSession.startScale();
             }
         }
-        currentSession.setAutoRestoreData(currentSession.autoRestoreData)
-
-
-        if (!isOSCConnected) {
-            isOSCConnected = true;
-            loadingSpinner.stop('Avatar initialization completed.');
-            await startPrompt(loadingSpinner);
-        }
+        currentSession.setAutoRestore(currentSession.autoRestore ?? false)
     })
     oscController.addEventListener('/avatar/eyeheight', (value) => {
         if (!currentSession || typeof value !== "number") return;
-        if (currentSession.state !== 0) return;
+        if (currentSession.state !== ScalerSession.stopState) return;
 
         if (firstEyeHeight < 0) {
             firstEyeHeight = value;
@@ -76,7 +79,7 @@ function avatarDataHandlersInit(loadingSpinner: SpinnerResult) {
         currentSession.currentEyeHeight = value;
     })
 }
-function vrcscalerHandlersInit() {
+const startVRCHandlers = (loadingSpinner: SpinnerResult)=> {
     oscController.addEventListener('/avatar/parameters/VRCScaler/State', (value) => {
         if (!currentSession || typeof value !== "number") return;
         if (currentSession.state === value) return;
@@ -117,88 +120,121 @@ function vrcscalerHandlersInit() {
     })
     oscController.addEventListener('/avatar/parameters/VRCScaler/Settings/AutoRestore', (value) => {
         if (!currentSession || typeof value !== "boolean") return;
-        if (currentSession.autoRestoreData === value) return;
-        currentSession.autoRestoreData = value;
+        if (currentSession.autoRestore === value) return;
+        currentSession.autoRestore = value;
         currentSession.save();
     })
     oscController.addEventListener('/avatar/parameters/VRCScaler/ResetHeight', (value) => {
         if (!currentSession || typeof value !== "boolean") return;
         if (!value) return;
+
         currentSession.resetHeight();
         currentSession.save();
+        oscVRChat.send('/avatar/parameters/VRCScaler/ResetHeight', {
+            type: 'boolean',
+            value: false
+        });
     })
     oscController.addEventListener('/avatar/parameters/VRCScaler/Settings/Reset', (value) => {
         if (!currentSession || typeof value !== "boolean") return;
         if (!value) return;
-        currentSession.resetSettings();
+
+        currentSession.reset();
         currentSession.save();
+        oscVRChat.send('/avatar/parameters/VRCScaler/Settings/Reset', {
+            type: 'boolean',
+            value: false
+        });
     })
     oscController.addEventListener('/avatar/parameters/VRCScaler/Settings/DefaultHeight', (value) => {
         if (!currentSession || typeof value !== "boolean") return;
         if (!value) return;
+
         currentSession.defaultEyeHeight = currentSession.currentEyeHeight;
         currentSession.save();
+        oscVRChat.send('/avatar/parameters/VRCScaler/Settings/DefaultHeight', {
+            type: 'boolean',
+            value: false
+        });
     })
-}
-function heartbeatHandlersInit() {
-    setInterval(() => {
-        oscVRC.send('/avatar/parameters/VRCScaler/Heartbeat', ['boolean', true]);
-    }, 100);
-    oscController.addEventListener('/avatar/parameters/VRCScaler/Heartbeat', (value) => {
+    oscController.addEventListener('/avatar/parameters/VRCScaler/Heartbeat', async () => {
         clearTimeout(heartbeatTimeout);
+
+        if (!isOSCConnected && currentSession) {
+            isOSCConnected = true;
+            loadingSpinner.stop('OSC: Connected');
+            await startShell(loadingSpinner);
+        }
+
         heartbeatTimeout = setTimeout(() => {
-            if (!currentSession) return;
+            if (!currentSession || !isOSCConnected) return;
+            isOSCConnected = false;
+            promptController.abort();
+
+            if (!currentSession.autoRestore) currentSession.state = ScalerSession.stopState;
+            currentSession.stopScale();
+
             currentSession.save().then(() => {
-                isOSCConnected = false;
-                currentSession.stopScale();
+                log.warn('OSC: Connection lost');
+                loadingSpinner.start('OSC: Waiting for connection');
             });
         }, 1000);
     })
+    setInterval(() => {
+        oscVRChat.send('/avatar/parameters/VRCScaler/Heartbeat', ['boolean', true]);
+    }, 100);
 }
-async function startPrompt(loadingSpinner: SpinnerResult) {
+const startShell = async (loadingSpinner: SpinnerResult)=> {
+    const settings = await ScalerSettings.fetch();
+    promptController = new AbortController();
+
     const action = await autocomplete({
         message: 'Select an action:',
         placeholder: 'Type to search...',
+        initialValue: shellCurrentValue,
         options: [
-            { value: 'divider', label: '── Scale ──' },
+            { value: 'divider1', label: '── Scale ──' },
             { value: 'grow', label: 'Grow' },
             { value: 'stop', label: 'Stop' },
             { value: 'shrink', label: 'Shrink' },
-            { value: 'divider', label: '── Speed ──' },
+            { value: 'divider2', label: '── Speed ──' },
             { value: 'scaling-rate', label: 'Set Speed', hint: 'Set the scaling speed' },
             { value: 'scaling-unit-meters', label: 'Set Unit: m/s', hint: 'Set the scaling unit to m/s' },
             { value: 'scaling-unit-centimeters', label: 'Set Unit: cm/s', hint: 'Set the scaling unit to cm/s' },
-            { value: 'divider', label: '── Settings ──' },
+            { value: 'divider3', label: '── Session Settings ──' },
             { value: 'set-default-height', label: 'Set Default Height', hint: `Set the default height to the current height` },
             { value: 'reset-height', label: 'Reset Height' },
-            { value: 'reset-settings', label: 'Reset Settings' },
-            { value: 'divider', label: '──' },
+            { value: 'reset-session-settings', label: 'Reset Session Settings' },
+            { value: 'divider4', label: '── VRCScaler Settings ──' },
+            { value: 'min-height', label: 'Set Minimum Height' },
+            { value: 'max-height', label: 'Set Maximum Height' },
+            { value: 'reset-vrcscaler-settings', label: 'Reset VRCScaler Settings' },
+            { value: 'divider5', label: '──' },
             { value: 'exit', label: 'Exit' },
         ],
+        signal: promptController.signal,
         filter: (search, option) => {
             if (option.value.includes("divider")) return false;
             return !!(option.value.includes(search) || option.hint && option.hint.includes(search));
         }
     });
 
-    if (isCancel(action) || action == 'exit') {
-        process.exit(0);
-    }
-
+    let value;
+    if (typeof action === 'string') shellCurrentValue = action;
     if (currentSession && isOSCConnected) {
         switch (action) {
             case 'grow':
-                currentSession.setScaleState(1);
+                currentSession.setScaleState(ScalerSession.growState);
                 currentSession.startScale();
                 await currentSession.save();
                 break;
             case 'shrink':
-                currentSession.setScaleState(-1);
+                currentSession.setScaleState(ScalerSession.shrinkState);
                 currentSession.startScale();
                 await currentSession.save();
                 break;
             case 'stop':
-                currentSession.setScaleState(0);
+                currentSession.setScaleState(ScalerSession.stopState);
                 currentSession.stopScale();
                 await currentSession.save();
                 break;
@@ -224,30 +260,49 @@ async function startPrompt(loadingSpinner: SpinnerResult) {
                 currentSession.defaultEyeHeight = currentSession.currentEyeHeight;
                 await currentSession.save();
                 break;
+            case 'reset-session-settings':
+                currentSession.reset();
+                await currentSession.save();
+                break;
             case 'reset-height':
                 currentSession.resetHeight();
                 await currentSession.save();
                 break;
-            case 'reset-settings':
-                currentSession.resetSettings();
-                await currentSession.save();
+            case 'min-height':
+                value = await text({ message: "Enter minimum height (in meters):" })
+                if (typeof value !== 'string') break;
+                settings.minEyeHeight = parseFloat(value);
+                await settings.save();
                 break;
+            case 'max-height':
+                value = await text({ message: "Enter maximum height (in meters):" })
+                if (typeof value !== 'string') break;
+                settings.maxEyeHeight = parseFloat(value);
+                await settings.save();
+                break;
+            case 'reset-vrcscaler-settings':
+                settings.reset();
+                await settings.save();
+                break;
+            case 'exit':
+                process.exit(0);
         }
     }
 
-    if (!currentSession || !isOSCConnected) {
-        log.error('Failed to connect to avatar.');
-        loadingSpinner.start('Waiting for avatar initialization');
-    } else {
-        await startPrompt(loadingSpinner);
+    if (currentSession && isOSCConnected) {
+        await startShell(loadingSpinner);
     }
 }
 
-intro('VRCScaler')
-oscController = new OSCController(() => {
+if (typeof params["osc-vrc-host"] !== 'string' || typeof params["osc-vrc-port"] !== 'string') process.exit(1);
+oscVRChat = new Client(params["osc-vrc-host"], parseInt(params["osc-vrc-port"]));
+
+intro(`VRCScaler v${process.env.npm_package_version}`)
+oscController = new OSCController(async () => {
     const loadingSpinner = spinner()
-    loadingSpinner.start('Waiting for avatar initialization.');
-    avatarDataHandlersInit(loadingSpinner);
-    vrcscalerHandlersInit();
-    heartbeatHandlersInit();
+    loadingSpinner.start('OSC: Waiting for connection');
+    startAvatarHandlers();
+    startVRCHandlers(loadingSpinner);
 })
+
+export { oscVRChat }

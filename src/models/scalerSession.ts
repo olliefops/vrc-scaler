@@ -1,12 +1,10 @@
-import {oscVRC} from "@/index";
-import {log} from "@clack/prompts";
+import {oscVRChat} from "@/index";
+import {fetchFile, saveFile} from "utils/filesystem";
+import {ScalerSettings} from "models/scalerSettings";
 
 const filePath = 'VRCScaler_Sessions.json';
-const minEyeHeight = 0.5;
-const maxEyeHeight = 100;
-let currentIteration: number = 0;
-let currentData: ScalerSession[];
-let scalerTimer: NodeJS.Timer | null = null;
+
+let scalerTimer: NodeJS.Timer | undefined;
 
 export class ScalerSession {
     // Avatar Data
@@ -20,39 +18,53 @@ export class ScalerSession {
     scaleRateUnit: number = 0; // 0: meters, 1: centimeters
 
     // Session Settings
-    autoRestoreData: boolean = false;
+    autoRestore: boolean = false;
 
+    // Units
     static metersUnit = 0;
     static centimetersUnit = 1;
+
+    // States
+    static growState = 1;
+    static stopState = 0;
+    static shrinkState = -1;
 
     constructor(avatarId: string) {
         this.avatarId = avatarId;
     }
 
+    // Setter Functions
+    setEyeHeight(value: number) {
+        this.currentEyeHeight = value;
+        oscVRChat.send('/avatar/eyeheight', {
+            type: 'float',
+            value: value
+        })
+    }
     setScaleState(value: number) {
         this.state = value;
-        oscVRC.send('/avatar/parameters/VRCScaler/State', {
+        oscVRChat.send('/avatar/parameters/VRCScaler/State', {
             type: 'float',
             value: value
         });
     }
     setScaleRate(value: number) {
         this.scaleRate = value;
-        oscVRC.send('/avatar/parameters/VRCScaler/Rate', {
+        oscVRChat.send('/avatar/parameters/VRCScaler/Rate', {
             type: 'float',
             value: value / 100
         });
     }
     setScaleRateUnit(value: number) {
         this.scaleRateUnit = value;
-        oscVRC.send('/avatar/parameters/VRCScaler/Rate/Unit', {
+        oscVRChat.send('/avatar/parameters/VRCScaler/Rate/Unit', {
             type: 'float',
             value: value
         });
     }
-    setAutoRestoreData(value: boolean) {
-        this.autoRestoreData = value;
-        oscVRC.send('/avatar/parameters/VRCScaler/Settings/AutoRestore', {
+    setAutoRestore(value: boolean) {
+        this.autoRestore = value;
+        oscVRChat.send('/avatar/parameters/VRCScaler/Settings/AutoRestore', {
             type: 'boolean',
             value: value
         });
@@ -67,106 +79,80 @@ export class ScalerSession {
             return;
         }
     }
-    setEyeHeight(value: number) {
-        this.currentEyeHeight = value;
-        oscVRC.send('/avatar/eyeheight',  {
-            type: 'float',
-            value: value
-        });
-    }
-    resetHeight() {
-        if (!this.defaultEyeHeight) return;
-        this.stopScale();
-        this.setScaleState(0);
-        this.setEyeHeight(this.defaultEyeHeight);
-    }
-    resetSettings() {
+
+    // Reset Functions
+    reset() {
         if (!this.defaultEyeHeight) return;
         this.stopScale();
         this.setEyeHeight(this.defaultEyeHeight);
         this.setScaleRateUnit(ScalerSession.metersUnit)
-        this.setScaleState(0);
+        this.setScaleState(ScalerSession.stopState);
         this.setScaleRate(1);
     }
+    resetHeight() {
+        if (!this.defaultEyeHeight) return;
+        this.stopScale();
+        this.setScaleState(ScalerSession.stopState);
+        this.setEyeHeight(this.defaultEyeHeight);
+    }
+
+    // Scale Controllers
     startScale() {
         if (this.state === 0 || !this.currentEyeHeight || !this.scaleRate) return;
-        clearInterval(scalerTimer);
+        if (scalerTimer) clearInterval(scalerTimer);
 
-        scalerTimer = setInterval(() => {
-            if (!this.currentEyeHeight || !this.scaleRate) return;
+        ScalerSettings.fetch().then(settings => {
+            scalerTimer = setInterval(() => {
+                if (!this.currentEyeHeight || !this.scaleRate) return;
 
-            if (this.state === 0) {
-                clearInterval(scalerTimer);
-                this.setScaleState(0);
-                return;
-            }
+                if (this.state === 0) {
+                    if (scalerTimer) clearInterval(scalerTimer);
+                    this.setScaleState(ScalerSession.stopState);
+                    return;
+                }
 
-            if (this.state === -1 && this.currentEyeHeight <= minEyeHeight) {
-                clearInterval(scalerTimer);
-                this.setEyeHeight(minEyeHeight);
-                this.setScaleState(0);
-                return;
-            }
+                if (this.state === -1 && this.currentEyeHeight <= settings.minEyeHeight) {
+                    if (scalerTimer) clearInterval(scalerTimer);
+                    this.setEyeHeight(settings.minEyeHeight);
+                    this.setScaleState(ScalerSession.stopState);
+                    return;
+                }
 
-            if (this.state === 1 && this.currentEyeHeight >= maxEyeHeight) {
-                clearInterval(scalerTimer);
-                this.setEyeHeight(maxEyeHeight);
-                this.setScaleState(0);
-                return;
-            }
+                if (this.state === 1 && this.currentEyeHeight >= settings.maxEyeHeight) {
+                    if (scalerTimer) clearInterval(scalerTimer);
+                    this.setEyeHeight(settings.maxEyeHeight);
+                    this.setScaleState(ScalerSession.stopState);
+                    return;
+                }
 
-            currentIteration++;
-            let nextEyeHeight = this.currentEyeHeight + this.state * ( ( this.scaleRateUnit == 0 ? this.scaleRate : this.scaleRate / 100 ) / 50 );
-            nextEyeHeight = Math.min(Math.max(nextEyeHeight, minEyeHeight), maxEyeHeight)
-
-            // Current Eye Height + State (-1/1) * ( ScaleRate (meters/centimeters) / 50 (iterations per second) )
-            this.setEyeHeight(nextEyeHeight);
-        }, 1000 / 50);
+                // Current Eye Height + State (-1/1) * ( ScaleRate (meters / centimeters) / 100 (iterations per second) )
+                let nextEyeHeight = this.currentEyeHeight + this.state * ( ( this.scaleRateUnit == 0 ? this.scaleRate : this.scaleRate / 100 ) / 100 );
+                this.setEyeHeight(Math.min(Math.max(nextEyeHeight, settings.minEyeHeight), settings.maxEyeHeight));
+            }, 1000 / 100);
+        })
     }
     stopScale() {
-        clearInterval(scalerTimer);
+        if (scalerTimer) clearInterval(scalerTimer);
     }
+
+    // Data Functions
     async save() {
+        const currentData = (await fetchFile(filePath)) ?? [];
         const sessions = currentData.filter((item: ScalerSession) => item.avatarId !== this.avatarId) ?? [];
-        const newData = [...sessions, this];
-        const saved = await Bun.write(filePath, JSON.stringify(newData, null, 2));
-        currentData = newData;
-
-        if (!saved) {
-            log.error(`Failed saving session: ${JSON.stringify(this)}`);
-        }
-
-        return;
+        await saveFile(filePath, [...sessions, this]);
     }
-
-    static async fetchSession(avatarId: string): Promise<ScalerSession> {
-        if (!currentData) {
-            const file = await Bun.file(filePath, { type: "application/json" });
-
-            if (await file.exists()) {
-                if ((await file.text()) !== "") {
-                    currentData = await file.json();
-                } else {
-                    currentData = [];
-                }
-            } else {
-                currentData = [];
-            }
-        }
-
+    static async fetch(avatarId: string): Promise<ScalerSession> {
         const session = new ScalerSession(avatarId);
+        const currentData = (await fetchFile(filePath)) ?? [];
 
-        if (currentData.length > 0) {
-            const sessionData = currentData.find((item: ScalerSession) => item.avatarId === avatarId);
-
-            if (sessionData) {
-                session.currentEyeHeight = sessionData.currentEyeHeight;
-                session.defaultEyeHeight = sessionData.defaultEyeHeight;
-                session.state = sessionData.state;
-                session.scaleRate = sessionData.scaleRate;
-                session.scaleRateUnit = sessionData.scaleRateUnit;
-                session.autoRestoreData = sessionData.autoRestoreData;
-            }
+        const sessionData = currentData.find((item: ScalerSession) => item.avatarId === avatarId);
+        if (sessionData) {
+            session.currentEyeHeight = sessionData.currentEyeHeight;
+            session.defaultEyeHeight = sessionData.defaultEyeHeight;
+            session.state = sessionData.state;
+            session.scaleRate = sessionData.scaleRate;
+            session.scaleRateUnit = sessionData.scaleRateUnit;
+            session.autoRestore = sessionData.autoRestore;
         }
 
         return session;

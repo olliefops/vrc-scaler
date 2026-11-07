@@ -1,18 +1,22 @@
 {
   "compilerOptions": {
-    "target": "es2016",
-    "module": "commonjs",
-    "esModuleInterop": true,
-    "forceConsistentCasingInFileNames": true,
+    "lib": ["ESNext", "DOM"],
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
     "strict": true,
     "skipLibCheck": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
     "outDir": "dist",
     "rootDir": ".",
+    "types": ["Bun"],
     "paths": {
       "@/*": ["./src/*"],
       "utils/*": ["./src/utils/*"],
       "models/*": ["./src/models/*"]
-    }
+    },
   },
   "include": ["src"]
 }

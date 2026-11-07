@@ -6,12 +6,13 @@
   "scripts": {
     "dev": "bun --watch src/index.ts",
     "build": "bun run build:win && bun run build:linux-x64 && bun run build:linux-arm",
-    "build:win": "bun build --compile --target bun-win32-x64 ./src/index.ts --outfile=./dist/VRCScaler_win64.exe",
-    "build:linux-x64": "bun build --compile --target=bun-linux-x64 ./src/index.ts --outfile=./dist/VRCScaler_x64",
-    "build:linux-arm": "bun build --compile --target=bun-linux-arm64 ./src/index.ts --outfile=./dist/VRCScaler_arm64"
+    "build:win": "bun build --compile --target bun-win32-x64 src/index.ts --outfile=./dist/VRCScaler_win64.exe",
+    "build:linux-x64": "bun build --compile --target=bun-linux-x64 src/index.ts --outfile=./dist/VRCScaler_x64",
+    "build:linux-arm": "bun build --compile --target=bun-linux-arm64 src/index.ts --outfile=./dist/VRCScaler_arm64"
   },
   "dependencies": {
     "@clack/prompts": "^1.8.1",
+    "@semos-labs/glyph": "^0.2.10",
     "node-osc": "^11.7.1"
   },
   "devDependencies": {

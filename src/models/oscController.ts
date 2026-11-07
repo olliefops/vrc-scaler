@@ -20,16 +20,11 @@ export class OSCController {
     server: Server | undefined;
 
     constructor(onReady: Function) {
-        const OSCServer = new Server(params["osc-server-port"], params["osc-server-host"])
+        if (typeof params["osc-server-port"] !== "string" || typeof params["osc-server-host"] !== "string") return;
+        const OSCServer = new Server(parseInt(params["osc-server-port"]), params["osc-server-host"])
 
-        OSCServer.on('listening', () => {
-            log.success(`OSC Server: Listening on ${params["osc-server-host"]}:${params["osc-server-port"]}`);
-            onReady();
-        });
-        OSCServer.on('error', (err) => {
-            log.error('OSC Server: ', err);
-            this.server?.close();
-        });
+        OSCServer.on('listening', () => onReady());
+        OSCServer.on('error', () => this.server?.close());
         OSCServer.setMaxListeners(20);
 
         this.server = OSCServer;
