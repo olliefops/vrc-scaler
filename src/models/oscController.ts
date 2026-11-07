@@ -17,22 +17,22 @@ const { values: params } = parseArgs({
 });
 
 export class OSCController {
-    private server: Server | undefined;
+    server: Server | undefined;
 
     constructor(onReady: Function) {
-        this.server = new Server(params["osc-server-port"], params["osc-server-host"])
+        const OSCServer = new Server(params["osc-server-port"], params["osc-server-host"])
 
-        this.server.on('listening', () => {
+        OSCServer.on('listening', () => {
             log.success(`OSC Server: Listening on ${params["osc-server-host"]}:${params["osc-server-port"]}`);
             onReady();
         });
-
-        this.server.on('error', (err) => {
+        OSCServer.on('error', (err) => {
             log.error('OSC Server: ', err);
             this.server?.close();
         });
+        OSCServer.setMaxListeners(20);
 
-        this.server.setMaxListeners(20);
+        this.server = OSCServer;
     }
 
     addEventListener(address: string, eventHandler: (data: string|number|boolean) => void) {
