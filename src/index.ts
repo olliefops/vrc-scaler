@@ -4,6 +4,7 @@ import {OscServer} from "models/oscServer";
 import {Session} from "models/session";
 import {autocomplete, intro, log, spinner, SpinnerResult, text, isCancel} from '@clack/prompts';
 import {Settings} from "models/settings";
+import packageJson from "../package.json" with { type: "json" };
 
 // Launch Args
 const { values: params } = parseArgs({
@@ -122,15 +123,29 @@ const startVRCHandlers = (loadingSpinner: SpinnerResult)=> {
     })
     oscServer.addEventListener('/avatar/parameters/VRCScaler/Rate/Meters', (value) => {
         if (!currentSession || typeof value !== "number" || value === 0) return;
+        if (value === 0) return;
+
         currentSession.setScaleRate(value * 100);
         currentSession.setScaleRateUnit(Session.metersUnit);
         currentSession.save();
+
+        oscClient.send('/avatar/parameters/VRCScaler/Rate/Meters', {
+            type: 'float',
+            value: 0
+        });
     })
     oscServer.addEventListener('/avatar/parameters/VRCScaler/Rate/Centimeters', (value) => {
         if (!currentSession || typeof value !== "number" || value === 0) return;
+        if (value === 0) return;
+
         currentSession.setScaleRate(value * 100);
         currentSession.setScaleRateUnit(Session.centimetersUnit);
         currentSession.save();
+
+        oscClient.send('/avatar/parameters/VRCScaler/Rate/Centimeters', {
+            type: 'float',
+            value: 0
+        });
     })
     oscServer.addEventListener('/avatar/parameters/VRCScaler/Settings/AutoRestore', (value) => {
         if (!currentSession || typeof value !== "boolean") return;
@@ -144,6 +159,7 @@ const startVRCHandlers = (loadingSpinner: SpinnerResult)=> {
 
         currentSession.resetHeight();
         currentSession.save();
+
         oscClient.send('/avatar/parameters/VRCScaler/ResetHeight', {
             type: 'boolean',
             value: false
@@ -312,7 +328,7 @@ const startShell = async (loadingSpinner: SpinnerResult)=> {
 if (typeof params["osc-client-host"] !== 'string' || typeof params["osc-client-port"] !== 'string') process.exit(1);
 if (typeof params["osc-server-port"] !== "string" || typeof params["osc-server-host"] !== "string") process.exit(1);
 
-intro(`VRCScaler`)
+intro(`VRCScaler v${packageJson.version}`)
 
 oscClient = new Client(params["osc-client-host"], parseInt(params["osc-client-port"]));
 oscServer = new OscServer(params["osc-server-host"], parseInt(params["osc-server-port"]), async () => {
