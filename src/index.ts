@@ -199,6 +199,7 @@ const startVRCHandlers = (loadingSpinner: SpinnerResult)=> {
     }, 100);
 }
 const startShell = async (loadingSpinner: SpinnerResult)=> {
+    if (promptController) promptController.abort();
     const settings = await Settings.fetch();
     promptController = new AbortController();
 
@@ -317,7 +318,7 @@ oscClient = new Client(params["osc-client-host"], parseInt(params["osc-client-po
 oscServer = new OscServer(params["osc-server-host"], parseInt(params["osc-server-port"]), async () => {
     log.success(
         `OSC: Server started on ${params["osc-server-host"]}:${params["osc-server-port"]}\n`+
-        `OSC: Sending messages to VRC on ${params["osc-vrc-host"]}:${params["osc-vrc-port"]}`
+        `OSC: Sending messages to VRC on ${params["osc-client-host"]}:${params["osc-client-port"]}`
     )
 
     const loadingSpinner = spinner()
